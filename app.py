@@ -5,6 +5,15 @@ import os
 
 st.set_page_config(page_title="学生体测评分系统", layout="wide")
 st.title("🏃‍♂️ 学生体测评分系统")
+st.subheader("📥 下载评分模板")
+
+with open("评分模板.xlsx", "rb") as f:
+    st.download_button(
+        label="⬇️ 下载标准评分模板",
+        data=f,
+        file_name="评分模板.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 # 初始化 session_state
 if "scored" not in st.session_state:

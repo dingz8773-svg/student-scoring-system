@@ -1,4 +1,10 @@
 import os
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from openpyxl import load_workbook
+from openpyxl.styles import Alignment, Font, Border, Side
+from scoring_rules import MALE_RULES, FEMALE_RULES
 
 def clean_old_files():
     for file in os.listdir():
@@ -7,30 +13,17 @@ def clean_old_files():
                 os.remove(file)
             except Exception as e:
                 print(f"⚠️ 无法删除文件 {file}：{e}")
-import pandas as pd
-import numpy as np
-from scoring_rules import MALE_RULES, FEMALE_RULES
-from datetime import datetime
-from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Font, Border, Side
 
 def process_scores(file_path):
     print(f"📥 正在读取文件：{file_path}")
-    # ✅ 清理旧评分文件
     clean_old_files()
 
     raw_df = pd.read_excel(file_path, header=None)
-
     header_indices = raw_df[raw_df.apply(lambda row: row.astype(str).str.contains('性别').any(), axis=1)].index.tolist()
     print(f"🔍 识别到 {len(header_indices)} 个表头段落")
 
     all_results = []
     time_projects = ['1500米', '800米']
-    all_projects = list(MALE_RULES.keys())
-    if '仰卧起坐' in all_projects and '引体向上' in all_projects:
-        all_projects.remove('仰卧起坐')
-        insert_index = all_projects.index('引体向上') + 1
-        all_projects.insert(insert_index, '仰卧起坐')
 
     for i, header_idx in enumerate(header_indices):
         end_idx = header_indices[i + 1] if i + 1 < len(header_indices) else len(raw_df)
@@ -52,8 +45,12 @@ def process_scores(file_path):
         result = df.copy()
         remarks = []
 
-        for proj in all_projects:
-            result[f'{proj}_得分'] = ""
+        # 初始化统一得分列
+        result['仰卧起坐/引体向上_得分'] = ""
+        result['800米/1500米_得分'] = ""
+        for proj in MALE_RULES.keys():
+            if proj not in ['引体向上', '仰卧起坐', '1500米', '800米']:
+                result[f'{proj}_得分'] = ""
 
         for idx, row in df.iterrows():
             gender = row['性别']
@@ -62,9 +59,15 @@ def process_scores(file_path):
             missing_items = []
 
             for proj in rule_dict:
-                col_name = f'{proj}_得分'
-                val = row.get(proj)
+                # 映射统一列名
+                if proj in ['引体向上', '仰卧起坐']:
+                    col_name = '仰卧起坐/引体向上_得分'
+                elif proj in ['1500米', '800米']:
+                    col_name = '800米/1500米_得分'
+                else:
+                    col_name = f'{proj}_得分'
 
+                val = row.get(proj)
                 if pd.isna(val):
                     result.at[idx, col_name] = "无"
                     missing_items.append(proj)
@@ -113,11 +116,12 @@ def process_scores(file_path):
 
     final_result = pd.concat(all_results, ignore_index=True)
 
-    # ✅ 统一总表列顺序
+    # ✅ 统一总表列顺序（只保留合并后的项目列）
     standard_columns = [
         '序号', '班级', '学号', '性别', '姓名',
-        '引体向上', '仰卧起坐', '1分钟跳绳', '立定跳远', '抛实心球', '100米', '1500米', '800米',
-        '引体向上_得分', '仰卧起坐_得分', '1分钟跳绳_得分', '立定跳远_得分', '抛实心球_得分', '100米_得分', '1500米_得分', '800米_得分',
+        '1分钟跳绳', '立定跳远', '抛实心球', '100米',
+        '仰卧起坐/引体向上_得分', '800米/1500米_得分',
+        '1分钟跳绳_得分', '立定跳远_得分', '抛实心球_得分', '100米_得分',
         '总分', '平均分', '备注'
     ]
 
@@ -135,10 +139,8 @@ def process_scores(file_path):
     # ✅ 美化总表
     wb = load_workbook(total_file)
     ws = wb.active
-    thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                         top=Side(style='thin'), bottom=Side(style='thin'))
 
     for row in ws.iter_rows():
         for cell in row:
@@ -158,22 +160,26 @@ def process_scores(file_path):
         ws.column_dimensions[col_letter].width = max_length + 2
 
     wb.save(total_file)
-
-    # ✅ 分班输出
+    # ✅ 分班输出（每个班级一个文件，使用统一列结构）
     grouped = final_result.groupby('班级')
     for class_name, class_df in grouped:
+        class_df = class_df.copy()
+
+        # 补齐列（防止有缺失）
         for col in standard_columns:
             if col not in class_df.columns:
                 class_df[col] = ""
+
         class_df = class_df[standard_columns]
 
+        # 文件名处理
         safe_name = "".join(c if c.isalnum() or c in "_-" else "_" for c in str(class_name))
         file_name = f"{safe_name}_评分结果_{timestamp}.xlsx"
         class_df.to_excel(file_name, index=False)
 
+        # ✅ 美化分班表
         wb = load_workbook(file_name)
         ws = wb.active
-
         for row in ws.iter_rows():
             for cell in row:
                 cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -196,7 +202,3 @@ def process_scores(file_path):
 
     print("🎉 所有评分文件已生成完毕")
     return total_file
-
-if __name__ == "__main__":
-    total_file = process_scores("raw_scores.xlsx")
-    print("生成的总表文件：", total_file)

@@ -1,3 +1,12 @@
+import os
+
+def clean_old_files():
+    for file in os.listdir():
+        if file.endswith(".xlsx") and "评分结果" in file:
+            try:
+                os.remove(file)
+            except Exception as e:
+                print(f"⚠️ 无法删除文件 {file}：{e}")
 import pandas as pd
 import numpy as np
 from scoring_rules import MALE_RULES, FEMALE_RULES
@@ -7,6 +16,9 @@ from openpyxl.styles import Alignment, Font, Border, Side
 
 def process_scores(file_path):
     print(f"📥 正在读取文件：{file_path}")
+    # ✅ 清理旧评分文件
+    clean_old_files()
+
     raw_df = pd.read_excel(file_path, header=None)
 
     header_indices = raw_df[raw_df.apply(lambda row: row.astype(str).str.contains('性别').any(), axis=1)].index.tolist()

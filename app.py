@@ -6,6 +6,11 @@ import os
 st.set_page_config(page_title="学生体测评分系统", layout="wide")
 st.title("🏃‍♂️ 学生体测评分系统")
 
+# 初始化 session_state
+if "scored" not in st.session_state:
+    st.session_state.scored = False
+    st.session_state.total_file = None
+
 uploaded_file = st.file_uploader("请上传原始 Excel 文件（.xlsx）", type=["xlsx"])
 
 if uploaded_file is not None:
@@ -13,26 +18,30 @@ if uploaded_file is not None:
     with open("raw_scores.xlsx", "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    st.success("✅ 文件上传成功，正在评分中...")
+    if not st.session_state.scored:
+        st.success("✅ 文件上传成功，正在评分中...")
 
-    # 调用评分函数并接收返回值
-    try:
-        total_file = process_scores("raw_scores.xlsx")
-    except Exception as e:
-        st.error(f"❌ 评分过程中发生错误：{e}")
-        st.stop()
+        try:
+            total_file = process_scores("raw_scores.xlsx")
+        except Exception as e:
+            st.error(f"❌ 评分过程中发生错误：{e}")
+            st.stop()
 
-    if total_file is None or not os.path.exists(total_file):
-        st.error("❌ 没有找到评分结果文件，请确认表格内容是否符合要求。")
-        st.stop()
+        if total_file is None or not os.path.exists(total_file):
+            st.error("❌ 没有找到评分结果文件，请确认表格内容是否符合要求。")
+            st.stop()
 
-    # 读取评分结果
+        st.session_state.scored = True
+        st.session_state.total_file = total_file
+    else:
+        total_file = st.session_state.total_file
+
+    # 显示评分结果
     result_df = pd.read_excel(total_file)
 
     st.subheader("📊 总表评分结果预览（前 30 行）")
     st.dataframe(result_df.head(30), use_container_width=True)
 
-    # 下载总表按钮
     with open(total_file, "rb") as f:
         st.download_button(
             label="⬇️ 下载总评分结果 Excel 文件",
@@ -41,7 +50,6 @@ if uploaded_file is not None:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    # 分班下载按钮
     st.subheader("📁 分班评分结果下载")
 
     class_files = [
@@ -60,4 +68,3 @@ if uploaded_file is not None:
                 )
     else:
         st.info("暂无分班文件，请确认评分已完成并包含班级字段。")
-

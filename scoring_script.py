@@ -78,6 +78,7 @@ def process_scores(file_path):
         result = df.copy()
         remarks = []
 
+        # 确保合并列存在
         for col in [
             '仰卧起坐/引体向上', '800米/1500米',
             '仰卧起坐/引体向上_得分', '800米/1500米_得分',
@@ -94,12 +95,31 @@ def process_scores(file_path):
             score_values = []
             missing_items = []
 
-            result.at[idx, '仰卧起坐/引体向上'] = row.get('引体向上') if gender == '男' else row.get('仰卧起坐')
-            result.at[idx, '800米/1500米'] = row.get('1500米') if gender == '男' else row.get('800米')
+            # 构建一份可修改的行值副本，用于容错映射
+            values = row.to_dict()
 
+            # --- 容错映射（根据用户要求：女生可能把1500米放在表里，视为800米；
+            #                    女生可能把引体向上写在表里，视为仰卧起坐） ---
+            if gender == '女':
+                # 如果 800米 缺失但有 1500米，则把1500米的值当作800米
+                if (('800米' not in values) or pd.isna(values.get('800米'))) and (('1500米' in values) and not pd.isna(values.get('1500米'))):
+                    values['800米'] = values.get('1500米')
+
+                # 如果 仰卧起坐 缺失但有 引体向上，则把引体向上的值当作仰卧起坐
+                if (('仰卧起坐' not in values) or pd.isna(values.get('仰卧起坐'))) and (('引体向上' in values) and not pd.isna(values.get('引体向上'))):
+                    values['仰卧起坐'] = values.get('引体向上')
+
+            # （可选扩展：如果你也想对男生做相反方向的容错，也可以在这里添加）
+
+            # 在合并列中展示实际使用的值（可能是映射后的）
+            result.at[idx, '仰卧起坐/引体向上'] = values.get('引体向上') if gender == '男' else values.get('仰卧起坐')
+            result.at[idx, '800米/1500米'] = values.get('1500米') if gender == '男' else values.get('800米')
+
+            # 其他项目直接从 values 读取（有容错处理后的）
             for proj in ['1分钟跳绳', '立定跳远', '抛实心球', '100米']:
-                result.at[idx, proj] = row.get(proj, '')
+                result.at[idx, proj] = values.get(proj, '')
 
+            # 对每个规则表中的项目评分（从 values 读取）
             for proj in rule_dict:
                 if proj in ['引体向上', '仰卧起坐']:
                     col_name = '仰卧起坐/引体向上_得分'
@@ -108,21 +128,22 @@ def process_scores(file_path):
                 else:
                     col_name = f'{proj}_得分'
 
-                val = row.get(proj)
+                val = values.get(proj)
                 if pd.isna(val):
                     result.at[idx, col_name] = "无"
                     missing_items.append(proj)
                     continue
 
                 if proj in time_projects:
-                    val = parse_time(val)
-                    if val is None:
+                    parsed = parse_time(val)
+                    if parsed is None:
                         result.at[idx, col_name] = "无"
                         missing_items.append(f"{proj}(时间格式错误)")
                         continue
+                    val_num = parsed
                 else:
                     try:
-                        val = float(val)
+                        val_num = float(val)
                     except:
                         result.at[idx, col_name] = "无"
                         missing_items.append(f"{proj}(非数值)")
@@ -130,7 +151,7 @@ def process_scores(file_path):
 
                 matched = False
                 for low, up, pts in rule_dict[proj]:
-                    if low <= val <= up:
+                    if low <= val_num <= up:
                         result.at[idx, col_name] = pts
                         score_values.append(pts)
                         matched = True

@@ -39,13 +39,41 @@ def beautify_excel(file_path):
     wb.save(file_path)
 
 def parse_time(val):
+    """
+    将 800米/1500米 的原始输入转换为总秒数：
+    1) "m:ss" 或 "m: s" => 直接解析为 分:秒
+    2) 无冒号的数值 => 先四舍五入保留两位小数，再按 m.ss（分钟.秒）解释为 分:秒
+       例如 3.45 -> 3分45秒 = 225s；3.5 -> 3分50秒 = 230s
+       若小数部分经两位小数处理后 >= 60，则判为时间格式错误（返回 None）
+    """
     try:
-        val = str(val).replace('：', ':').strip()
-        if ':' in val:
-            mins, secs = val.split(':')
-            return int(mins) * 60 + int(secs)
-        return float(val) * 60
-    except:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return None
+
+        s = str(val).strip()
+        s = s.replace('：', ':').replace('’', "'").replace('′', "'").replace(' ', '')
+
+        # A: m:ss 格式
+        if ':' in s:
+            parts = s.split(':')
+            if len(parts) != 2:
+                return None
+            mins = int(float(parts[0]))
+            secs = int(round(float(parts[1])))
+            if secs < 0 or secs >= 60 or mins < 0:
+                return None
+            return mins * 60 + secs
+
+        # B: 无冒号 -> 按 m.ss 解释
+        num = float(s.replace(',', ''))
+        num = round(num, 2)  # 先保留两位小数
+        mins = int(num)
+        secs = int(round((num - mins) * 100))
+        if secs < 0 or secs >= 60 or mins < 0:
+            return None
+        return mins * 60 + secs
+
+    except Exception:
         return None
 
 def process_scores(file_path):
@@ -78,7 +106,6 @@ def process_scores(file_path):
         result = df.copy()
         remarks = []
 
-        # 确保合并列存在
         for col in [
             '仰卧起坐/引体向上', '800米/1500米',
             '仰卧起坐/引体向上_得分', '800米/1500米_得分',
@@ -95,31 +122,20 @@ def process_scores(file_path):
             score_values = []
             missing_items = []
 
-            # 构建一份可修改的行值副本，用于容错映射
             values = row.to_dict()
 
-            # --- 容错映射（根据用户要求：女生可能把1500米放在表里，视为800米；
-            #                    女生可能把引体向上写在表里，视为仰卧起坐） ---
             if gender == '女':
-                # 如果 800米 缺失但有 1500米，则把1500米的值当作800米
                 if (('800米' not in values) or pd.isna(values.get('800米'))) and (('1500米' in values) and not pd.isna(values.get('1500米'))):
                     values['800米'] = values.get('1500米')
-
-                # 如果 仰卧起坐 缺失但有 引体向上，则把引体向上的值当作仰卧起坐
                 if (('仰卧起坐' not in values) or pd.isna(values.get('仰卧起坐'))) and (('引体向上' in values) and not pd.isna(values.get('引体向上'))):
                     values['仰卧起坐'] = values.get('引体向上')
 
-            # （可选扩展：如果你也想对男生做相反方向的容错，也可以在这里添加）
-
-            # 在合并列中展示实际使用的值（可能是映射后的）
             result.at[idx, '仰卧起坐/引体向上'] = values.get('引体向上') if gender == '男' else values.get('仰卧起坐')
             result.at[idx, '800米/1500米'] = values.get('1500米') if gender == '男' else values.get('800米')
 
-            # 其他项目直接从 values 读取（有容错处理后的）
             for proj in ['1分钟跳绳', '立定跳远', '抛实心球', '100米']:
                 result.at[idx, proj] = values.get(proj, '')
 
-            # 对每个规则表中的项目评分（从 values 读取）
             for proj in rule_dict:
                 if proj in ['引体向上', '仰卧起坐']:
                     col_name = '仰卧起坐/引体向上_得分'

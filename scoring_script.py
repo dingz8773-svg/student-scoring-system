@@ -106,6 +106,7 @@ def process_scores(file_path):
         result = df.copy()
         remarks = []
 
+        # 确保合并列存在（用于最终展示）
         for col in [
             '仰卧起坐/引体向上', '800米/1500米',
             '仰卧起坐/引体向上_得分', '800米/1500米_得分',
@@ -122,20 +123,41 @@ def process_scores(file_path):
             score_values = []
             missing_items = []
 
+            # 拿到一份可修改的行值副本
             values = row.to_dict()
 
+            # === NEW 1: 按性别拆解合并表头的原始数据 ===
+            # 若源表仅提供了合并列，则把其值映射到实际项目（不覆盖已有具体列）
+            combo_core = row.get('仰卧起坐/引体向上') if '仰卧起坐/引体向上' in df.columns else None
+            if combo_core is not None and not pd.isna(combo_core):
+                if gender == '男' and (('引体向上' not in values) or pd.isna(values.get('引体向上'))):
+                    values['引体向上'] = combo_core
+                if gender == '女' and (('仰卧起坐' not in values) or pd.isna(values.get('仰卧起坐'))):
+                    values['仰卧起坐'] = combo_core
+
+            combo_run = row.get('800米/1500米') if '800米/1500米' in df.columns else None
+            if combo_run is not None and not pd.isna(combo_run):
+                if gender == '男' and (('1500米' not in values) or pd.isna(values.get('1500米'))):
+                    values['1500米'] = combo_run
+                if gender == '女' and (('800米' not in values) or pd.isna(values.get('800米'))):
+                    values['800米'] = combo_run
+
+            # === 既有的“女生容错映射”继续保留（避免老师填错列名） ===
             if gender == '女':
                 if (('800米' not in values) or pd.isna(values.get('800米'))) and (('1500米' in values) and not pd.isna(values.get('1500米'))):
                     values['800米'] = values.get('1500米')
                 if (('仰卧起坐' not in values) or pd.isna(values.get('仰卧起坐'))) and (('引体向上' in values) and not pd.isna(values.get('引体向上'))):
                     values['仰卧起坐'] = values.get('引体向上')
 
+            # 在展示用合并列中反映“实际使用的值”
             result.at[idx, '仰卧起坐/引体向上'] = values.get('引体向上') if gender == '男' else values.get('仰卧起坐')
             result.at[idx, '800米/1500米'] = values.get('1500米') if gender == '男' else values.get('800米')
 
+            # 其他项目直接抄
             for proj in ['1分钟跳绳', '立定跳远', '抛实心球', '100米']:
                 result.at[idx, proj] = values.get(proj, '')
 
+            # 评分
             for proj in rule_dict:
                 if proj in ['引体向上', '仰卧起坐']:
                     col_name = '仰卧起坐/引体向上_得分'
